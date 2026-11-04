@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor GP-5 / GP-50</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.04-9">
+  <script>
+    // aplica o tema salvo antes de desenhar a pagina (evita piscar claro)
+    try { const t = localStorage.getItem("tema"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body data-conn="off" data-view="viewEditor">
+  <header class="appbar">
+    <div class="brand">
+      <span class="conn-dot" aria-hidden="true"></span>
+      <div class="min0">
+        <div class="brand-title"><span id="brandModel">GP-5 / GP-50</span> <span class="muted">Editor</span></div>
+        <div id="connLabel" class="brand-sub">desconectada</div>
+      </div>
+    </div>
+    <div class="picker">
+      <button id="slotPrev" class="icon" title="Preset anterior (PgUp)" disabled>‹</button>
+      <select id="slotSelect" title="Preset na pedaleira" disabled><option>— conecte a pedaleira —</option></select>
+      <button id="slotNext" class="icon" title="Próximo preset (PgDn)" disabled>›</button>
+    </div>
+    <div class="actions">
+      <button id="btnConnect" class="primary" title="Conectar pelo cabo USB">USB</button>
+      <button id="btnConnectBle" class="primary" title="Conectar pelo Bluetooth (o app do celular não pode estar conectado à pedaleira)">Bluetooth</button>
+      <button id="btnDisconnect" class="when-on">Desconectar</button>
+      <button id="btnTheme" class="icon" title="Tema: automático">◐</button>
+    </div>
+  </header>
+
+  <nav class="viewbar">
+    <div class="views">
+      <button data-view="viewEditor" class="active">Editor</button>
+      <button data-view="viewLibrary">Biblioteca <span id="libCount" class="badge"></span></button>
+      <button data-view="viewDevice">Pedaleira</button>
+    </div>
+    <span class="follow">versão 2026.11.04-9</span>
+    <label class="follow" title="Quando você troca de preset ou mexe num knob na pedaleira, o editor mostra a mudança"><input type="checkbox" id="follow" checked> acompanhar a pedaleira</label>
+  </nav>
+
+  <div id="progress" class="progress" hidden><div class="bar"></div><span class="txt"></span><button id="btnStop">Parar</button></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <!-- ===================== Editor ===================== -->
+  <main id="viewEditor" class="view active">
+    <section id="connectHint" class="card hint">
+      <div class="hint-icon" aria-hidden="true">⚡</div>
+      <div>
+        <h1>Conecte a GP-5 ou GP-50</h1>
+        <ol>
+          <li><b>USB:</b> ligue a pedaleira com um cabo de dados e feche o Valeton Suite.</li>
+          <li><b>Bluetooth:</b> ligue o Bluetooth da pedaleira e desconecte o app do celular (só um app por vez).</li>
+          <li>Clique em <b>USB</b> ou <b>Bluetooth</b> lá em cima. O modelo é detectado sozinho.</li>
+        </ol>
+        <p class="muted">Sem a pedaleira, dá para abrir arquivos .prst na <a href="#" data-goto="viewLibrary">Biblioteca</a> e editar do mesmo jeito.</p>
+      </div>
+    </section>
+
+    <div id="editor" class="workspace" hidden>
+      <section class="card area-head preset-head">
+        <div id="edSlotBig" class="slot-big">--</div>
+        <div class="ph-main">
+          <input id="edName" class="ph-name" maxlength="16" spellcheck="false" title="Nome do preset">
+          <div class="ph-sub">
+            <span id="edDevice" class="pill"></span>
+            <span id="edOrigin" class="muted"></span>
+            <span id="edDirty" class="dirty" hidden title="Alterado e ainda não salvo">● não salvo</span>
+          </div>
+        </div>
+        <div class="ph-live">
+          <span id="liveStatus" class="live-badge">fora da pedaleira</span>
+          <button id="btnPlay" hidden title="Carrega este preset na memória de trabalho da pedaleira para ouvir e editar ao vivo">Tocar na pedaleira</button>
+        </div>
+      </section>
+
+      <section class="card area-chain">
+        <header class="card-h">
+          <h2>Cadeia de sinal</h2>
+          <span class="muted small">clique para editar · duplo clique liga/desliga · arraste NR, PRE, MOD, DLY e RVB</span>
+        </header>
+        <div id="chain" class="chain"></div>
+      </section>
+
+      <section id="blockCard" class="card area-block"></section>
+
+      <div class="area-tools tools">
+        <section class="card">
+          <header class="card-h"><h2>Tempo</h2><span id="tempoHint" class="muted small"></span></header>
+          <div class="tempo">
+            <button id="btnTap" class="tap" title="Tap tempo (barra de espaço)">TAP</button>
+            <div class="tempo-read">
+              <div class="bpm"><output id="bpmOut">120</output><small>BPM</small></div>
+              <div id="delayOut" class="muted small"></div>
+              <div class="row tight"><button id="bpmMinus" class="icon">−</button><button id="bpmPlus" class="icon">+</button></div>
+            </div>
+          </div>
+          <input id="bpmRange" type="range" min="40" max="300" value="120" aria-label="BPM">
+          <div id="divGroup" class="seg">
+            <label><input type="radio" name="div" value="1" checked><span>♩ 1/4</span></label>
+            <label><input type="radio" name="div" value="0.5"><span>♪ 1/8</span></label>
+            <label><input type="radio" name="div" value="0.75"><span>♪. 1/8 pont.</span></label>
+          </div>
+        </section>
+        <section class="card">
+          <header class="card-h"><h2>Nível</h2></header>
+          <div class="param">
+            <div class="param-head"><label for="volRange">Volume do preset</label><output id="volOut" class="pval">50</output></div>
+            <input id="volRange" type="range" min="0" max="100" value="50">
+          </div>
+          <div class="param">
+            <div class="param-head"><label for="edSlot">Slot deste preset</label>
+              <input id="edSlot" type="number" min="0" max="99" class="slot-input" title="Slot onde este preset é tocado e salvo na pedaleira"></div>
+          </div>
+        </section>
+        <section class="card ctl-card">
+          <header class="card-h"><h2>CTL</h2><span class="muted small">blocos que cada CTL liga/desliga ao ser pisado</span></header>
+          <div id="ctlGrid"></div>
+          <p id="expNote" class="muted small" hidden>Pedal de expressão: ainda não suportado (falta descobrir como a GP-50 guarda a configuração).</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== Biblioteca ===================== -->
+  <main id="viewLibrary" class="view">
+    <section class="card libbar">
+      <div class="grp">
+        <span class="grp-l">Abrir</span>
+        <div class="grp-b">
+          <label class="btn" title="Abre arquivos .prst (ou arraste para a página)">Arquivos…<input id="inFiles" type="file" accept=".prst" multiple hidden></label>
+          <button id="btnFolder" title="Abre todos os .prst de uma pasta">Pasta…</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="grp-l">Ler da pedaleira</span>
+        <div class="grp-b">
+          <input id="slotRange" placeholder="slots: vazio = todos" size="16" title="Quais slots ler, ex.: 0-99 ou 11-14,31 (vazio = todos os não vazios)">
+          <button id="btnRead" disabled title="Traz para a lista os presets desses slots">Ler</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="grp-l">Com os <b id="selCountBar">0</b> selecionados</span>
+        <div class="grp-b">
+          <button id="btnSave" disabled title="Salva os presets selecionados como arquivos .prst numa pasta">⤓ Salvar em arquivos</button>
+          <select id="saveFormat" title="Formato dos arquivos">
+            <option value="">formato original</option>
+            <option value="gp5">como GP-5</option>
+            <option value="gp50">como GP-50</option>
+          </select>
+          <button id="btnWrite" disabled title="Grava cada preset selecionado no slot dele na pedaleira (com backup e conferência)">💾 Salvar na pedaleira</button>
+        </div>
+      </div>
+      <div class="grp end">
+        <span class="grp-l">&nbsp;</span>
+        <div class="grp-b"><button id="btnUndoLib" disabled title="Desfazer (Ctrl/Cmd+Z)">↶ Desfazer</button></div>
+      </div>
+    </section>
+
+    <div class="libgrid">
+      <section class="card library">
+        <div class="libtools">
+          <input id="filter" type="search" placeholder="Filtrar por nome ou modelo (ex.: Tape, Twin)">
+          <button id="btnSelVisible">Selecionar visíveis</button>
+          <button id="btnSelNone">Limpar seleção</button>
+          <span id="selCount" class="muted"></span>
+        </div>
+        <div class="tablewrap">
+          <table id="presetTable">
+            <thead><tr>
+              <th><input type="checkbox" id="chkAll" title="Selecionar/limpar visíveis"></th>
+              <th>Slot</th><th>Nome</th><th title="Pedaleira para a qual o preset foi feito">Modelo</th><th title="Blocos que o CTL liga/desliga">CTL</th>
+              <th>NR</th><th>PRE</th><th>DST</th><th>N→S</th><th>AMP</th><th>CAB</th><th>EQ</th><th>MOD</th><th>DLY</th><th>RVB</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="emptyHint" class="hint-empty">Abra arquivos .prst (GP-5 ou GP-50) ou conecte a pedaleira e clique em "Ler da pedaleira". Clique num preset para abrir no Editor; Ctrl/Cmd+clique só seleciona.</p>
+        </div>
+      </section>
+
+      <section class="card bulk">
+        <header class="card-h"><h2>Edição em massa</h2><span class="muted small">vale para os <b id="bulkCount">0</b> selecionados</span></header>
+        <nav class="subtabs">
+          <button data-op="rename" class="active">Renomear</button>
+          <button data-op="copy">Copiar bloco</button>
+          <button data-op="param">Ajustar parâmetro</button>
+          <button data-op="toggle">Ligar/desligar</button>
+          <button data-op="ctl">CTL</button>
+        </nav>
+
+        <form id="op-rename" class="op active">
+          <label class="field"><span>Modo</span>
+            <select name="mode">
+              <option value="modelo">Modelo de nome</option>
+              <option value="substituir">Localizar e substituir</option>
+              <option value="caixa">Maiúsculas/minúsculas</option>
+            </select>
+          </label>
+          <div data-mode="modelo" class="fields">
+            <label class="field"><span>Novo nome</span><input name="template" value="{nome}"></label>
+            <label class="field"><span>Começar {n} em</span><input name="start" type="number" value="1" class="short"></label>
+            <p class="muted small">Use {nome} (nome atual), {slot} e {n} (sequência). {n:2} e {slot:2} completam com zeros. Ex.: <code>{slot:2} {nome}</code></p>
+          </div>
+          <div data-mode="substituir" class="fields" hidden>
+            <label class="field"><span>Localizar</span><input name="find"></label>
+            <label class="field"><span>Substituir por</span><input name="replace"></label>
+            <label class="check"><input type="checkbox" name="caseSensitive"> diferenciar maiúsculas</label>
+          </div>
+          <div data-mode="caixa" class="fields" hidden>
+            <label class="field"><span>Converter para</span>
+              <select name="caixa"><option value="maiusculas">MAIÚSCULAS</option><option value="minusculas">minúsculas</option><option value="titulo">Título</option></select>
+            </label>
+          </div>
+        </form>
+
+        <form id="op-copy" class="op">
+          <p>Origem: <b id="copySource">— abra um preset no Editor —</b></p>
+          <label class="field"><span>Bloco</span><select name="block"></select></label>
+          <p class="muted small" id="copyWhat"></p>
+          <label class="check"><input type="checkbox" name="withActive" checked> copiar também se o bloco está ligado/desligado</label>
+          <fieldset>
+            <legend>Só trocar onde o bloco usa (nenhum marcado = todos)</legend>
+            <div id="copyOnly" class="checklist"></div>
+          </fieldset>
+        </form>
+
+        <form id="op-param" class="op">
+          <label class="field"><span>Bloco</span><select name="block"></select></label>
+          <label class="field"><span>Efeito</span><select name="model" title="Só os presets que usam este efeito no bloco são alterados"></select></label>
+          <label class="field"><span>Parâmetro</span><select name="param"></select></label>
+          <div class="field"><span>Novo valor</span>
+            <div class="pair">
+              <select name="mode" aria-label="Como aplicar"><option value="definir">definir em</option><option value="somar">somar</option></select>
+              <input name="value" type="number" step="any" value="0" aria-label="Valor">
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" name="swap"> trocar para este efeito nos presets que usam outro</label>
+          <p class="muted small">Sem marcar, só altera os presets em que o bloco já usa esse efeito. Marcando, os outros passam a usar este efeito (com os demais parâmetros no padrão). O valor fica dentro do mínimo e máximo do parâmetro.</p>
+        </form>
+
+        <form id="op-ctl" class="op">
+          <label class="field"><span>CTL</span>
+            <select name="fs"><option value="0">CTL 1 (o CTL da GP-5)</option><option value="1">CTL 2 (só GP-50)</option></select>
+          </label>
+          <label class="field"><span>Ação</span>
+            <select name="mode">
+              <option value="definir">usar exatamente estes blocos</option>
+              <option value="adicionar">adicionar estes blocos</option>
+              <option value="remover">tirar estes blocos</option>
+            </select>
+          </label>
+          <div class="field"><span>Blocos</span><div id="ctlBulkBlocks" class="chips"></div></div>
+          <p class="muted small">O CTL liga e desliga os blocos marcados ao ser pisado. Na GP-5 há um CTL; na GP-50, dois.</p>
+        </form>
+
+        <form id="op-toggle" class="op">
+          <label class="field"><span>Bloco</span><select name="block"></select></label>
+          <label class="field"><span>Ação</span><select name="active"><option value="1">ligar</option><option value="0">desligar</option></select></label>
+        </form>
+
+        <div class="row">
+          <button id="btnPreview">Prévia</button>
+          <button id="btnApply" class="primary" disabled>Aplicar</button>
+        </div>
+        <div id="planOut"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ===================== Pedaleira ===================== -->
+  <main id="viewDevice" class="view">
+    <div class="devgrid">
+      <section class="card">
+        <header class="card-h"><h2>Gravação</h2></header>
+        <p class="muted">Salvar no Editor grava a memória de trabalho no slot ativo (comando nativo da pedaleira). "Gravar selecionados" na Biblioteca grava vários de uma vez: na GP-5 pelo mesmo comando, na GP-50 pelo formato de importação do Valeton Suite. Antes de gravar em lote, o editor guarda uma cópia de cada slot; depois relê e confere.</p>
+        <h3>Backups desta sessão</h3>
+        <ul id="backups" class="muted"><li>nenhum</li></ul>
+        <button id="btnSaveBackups" disabled>Salvar backups numa pasta</button>
+      </section>
+      <section class="card">
+        <header class="card-h"><h2>IRs e SnapTones</h2></header>
+        <p class="muted">"Usado em" conta os presets abertos na Biblioteca. Clique no número para selecionar esses presets.</p>
+        <div id="banks" class="banks"><p class="muted">Conecte a pedaleira para ver.</p></div>
+      </section>
+      <section class="card">
+        <header class="card-h"><h2>Nomes na pedaleira</h2></header>
+        <ol id="devNames" start="0" class="names"></ol>
+      </section>
+      <section class="card">
+        <header class="card-h"><h2>Mensagens recebidas</h2></header>
+        <p class="muted">O que a pedaleira mandou sozinha (trocar preset, mexer em knob). Útil para diagnosticar a conexão.</p>
+        <pre id="pedalLog" class="log"></pre>
+      </section>
+    </div>
+  </main>
+
+  <footer class="appfoot">
+    <div class="foot-links">
+      <span>Feito por <b>David Falcão Neto</b></span>
+      <a href="https://www.instagram.com/davidfalcaoneto/" target="_blank" rel="noopener">Instagram</a>
+      <a href="https://www.linkedin.com/in/davidfalcaoneto/" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="https://github.com/davidfalcaoneto" target="_blank" rel="noopener">GitHub</a>
+      <a class="coffee" href="https://buymeacoffee.com/davidfalcaoneto" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    </div>
+    <div class="muted small">Projeto independente, não oficial: sem vínculo com a Valeton. Inspirado em <a href="https://rvalladares.com/gp5/gpeditor/" target="_blank" rel="noopener">rvalladares GP Editor</a>, <a href="https://github.com/helvecioneto/gp5-wc" target="_blank" rel="noopener">gp5-wc</a> e <a href="https://github.com/drewmerc302/valeton-gp50" target="_blank" rel="noopener">valeton-gp50</a> (MIT).</div>
+  </footer>
+
+  <nav class="toolbar">
+    <span class="toolbar-l">Este preset:</span>
+    <button id="btnSavePedal" class="save" disabled title="Salva o preset aberto na pedaleira (no slot ativo)">💾 Salvar na pedaleira</button>
+    <span class="exp">
+      <button id="btnExport" disabled title="Salva o preset aberto como arquivo .prst">⤓ Salvar em arquivo</button>
+      <select id="exportFormat" title="Formato do arquivo exportado">
+        <option value="">formato original</option><option value="gp5">GP-5</option><option value="gp50">GP-50</option>
+      </select>
+    </span>
+    <button id="btnUndo" disabled title="Desfazer (Ctrl/Cmd+Z)">↶ Desfazer</button>
+    <button id="btnRevert" disabled title="Volta este preset ao que foi aberto/lido">Descartar alterações</button>
+  </nav>
+
+  <dialog id="saveDlg">
+    <form method="dialog" id="saveForm">
+      <h2>Salvar no slot <span id="saveSlot">--</span></h2>
+      <label class="stack">Nome na pedaleira
+        <input id="saveName" maxlength="10" spellcheck="false" autocomplete="off" required>
+      </label>
+      <p class="muted small">Até 10 caracteres (letras, números, espaço e “-”). Isso sobrescreve o preset guardado nesse slot. O conteúdo anterior fica nos backups da aba Pedaleira.</p>
+      <div class="row end">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button value="ok" class="primary">💾 Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="lib/prst.js?v=2026.11.04-9"></script>
+  <script src="lib/webmidi_device.js?v=2026.11.04-9"></script>
+  <script src="lib/webmidi_write.js?v=2026.11.04-9"></script>
+  <script src="js/preset.js?v=2026.11.04-9"></script>
+  <script src="js/bulk.js?v=2026.11.04-9"></script>
+  <script src="js/device.js?v=2026.11.04-9"></script>
+  <script src="js/main.js?v=2026.11.04-9"></script>
+</body>
+</html>

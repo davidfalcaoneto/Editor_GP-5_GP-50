@@ -1,0 +1,8 @@
+# material de estudo local (nao faz parte do projeto)
+referencias/
+# configuracao pessoal do VS Code
+.vscode/settings.json
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
