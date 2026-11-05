@@ -964,7 +964,18 @@
     ensureLive();
   }
   window.addEventListener("beforeunload", (e) => { if (S.presets.some(isDirty)) { e.preventDefault(); e.returnValue = ""; } });
-  if (!navigator.requestMIDIAccess) { $("#btnConnect").disabled = true; $("#btnConnect").title = "Este navegador não tem Web MIDI (use Chrome ou Edge)"; }
-  if (!navigator.bluetooth) { $("#btnConnectBle").disabled = true; $("#btnConnectBle").title = "Este navegador não tem Web Bluetooth (use Chrome ou Edge)"; }
+  // Sem Web MIDI / Web Bluetooth os botoes ficam inativos; no celular nao ha "title" (hover),
+  // entao o motivo aparece no cartao de conexao.
+  const noMidi = !navigator.requestMIDIAccess, noBle = !navigator.bluetooth;
+  if (noMidi) { $("#btnConnect").disabled = true; $("#btnConnect").title = "Este navegador não tem Web MIDI (use Chrome ou Edge)"; }
+  if (noBle) { $("#btnConnectBle").disabled = true; $("#btnConnectBle").title = "Este navegador não tem Web Bluetooth (use Chrome ou Edge)"; }
+  if (noMidi || noBle) {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const what = noMidi && noBle ? "USB nem Bluetooth" : noMidi ? "USB (Web MIDI)" : "Bluetooth (Web Bluetooth)";
+    $("#noSupport").innerHTML = ios
+      ? `<b>Este navegador não conecta por ${what}.</b> No iPhone e no iPad todos os navegadores (Safari, Chrome, Edge) usam o motor do Safari, que não tem Web MIDI nem Web Bluetooth. Use o <b>Chrome</b> ou o <b>Edge</b> num computador (Mac ou Windows) ou num celular <b>Android</b>. No iPhone, o navegador gratuito <b>Bluefy</b> tem Web Bluetooth e pode conectar por Bluetooth (ainda não testado).`
+      : `<b>Este navegador não conecta por ${what}.</b> Use o <b>Chrome</b> ou o <b>Edge</b> atualizados (no computador ou no Android).`;
+    $("#noSupport").hidden = false;
+  }
   renderAll();
 })().catch((e) => { console.error(e); alert("Erro ao iniciar o editor: " + e.message); });

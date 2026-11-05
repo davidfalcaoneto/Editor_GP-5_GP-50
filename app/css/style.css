@@ -287,3 +287,10 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; width: 100%; }
 .foot-links a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .foot-links a:hover { text-decoration: underline; }
 .foot-links a.coffee { background: #ffdd00; color: #1b1b1b; padding: 4px 12px; border-radius: 14px; }
+.nosupport { margin: 0 0 8px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, #e5a50a 16%, transparent); border: 1px solid color-mix(in srgb, #e5a50a 50%, var(--line)); }
+@media (max-width: 520px) {
+  .brand-title .muted { display: none; }
+  .appbar .actions button { padding-left: 10px; padding-right: 10px; }
+  body[data-view="viewEditor"] { padding-bottom: 72px; }
+  .toolbar button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}

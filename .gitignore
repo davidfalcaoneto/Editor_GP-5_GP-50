@@ -6,3 +6,6 @@ referencias/
 node_modules/
 __pycache__/
 *.pyc
+
+# slides do Instagram (ficam so no computador)
+docs/instagram/
