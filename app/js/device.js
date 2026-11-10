@@ -104,7 +104,14 @@
   async function liveStart(bytes, slot, deviceCatalog) {
     catalog = deviceCatalog;
     if (slot != null) await Dev.selectSlot(slot);
-    activeSlot = slot != null ? slot : await Dev.readCurrentSlot();
+    // Confere que a pedaleira trocou mesmo: se o editor achar que esta num slot e ela
+    // estiver noutro, salvar grava a memoria de trabalho errada com o nome do preset
+    // da tela (foi o que deixou nome e efeitos em slots vizinhos na GP-50).
+    activeSlot = await Dev.readCurrentSlot();
+    if (slot != null && activeSlot !== slot) {
+      shown = null;
+      throw new Error(`A pedaleira não trocou para o slot ${slot} (está no ${activeSlot ?? "?"}). Tente de novo.`);
+    }
     shown = await Dev.readActivePrst("");
     baseline = slot != null ? Uint8Array.from(shown) : null;
     if (bytes == null) return Uint8Array.from(shown);
@@ -115,9 +122,13 @@
   const liveStop = () => { shown = null; };
 
   // Salva a memoria de trabalho (com tudo que ja foi mandado) no slot.
+  // O 0x4A grava o que estiver na memoria de trabalho: so salva se a pedaleira
+  // ainda estiver no slot que o editor carregou (pode ter sido trocado nela).
   async function save(slot, name) {
     await queue.catch(() => {});
     if (paramLoop) await paramLoop;
+    const now = await Dev.readCurrentSlot();
+    if (now !== slot) throw new Error(`A pedaleira está no slot ${now ?? "?"}, não no ${slot}. Nada foi salvo: abra o slot ${slot} de novo e salve.`);
     await Dev.live.save(slot, saveName(name));
   }
 

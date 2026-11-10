@@ -15,7 +15,9 @@
  *   pedal.turnKnob(7, 0, 42)
  */
 (function (root) {
-  function create({ PRST, Preset, catalog, slots, name = "GP-5", activeSlot = 0, log = () => {} }) {
+  // ignoreSelect: true faz a pedaleira ignorar a troca de preset pedida (como o Program
+  // Change ignorado que deixou nome e efeitos em slots vizinhos na GP-50).
+  function create({ PRST, Preset, catalog, slots, name = "GP-5", activeSlot = 0, ignoreSelect = false, log = () => {} }) {
     const crc8 = (bytes) => PRST.crc8(Uint8Array.from(bytes));
     const listeners = [];
     const store = slots.map((b) => Uint8Array.from(b));
@@ -57,7 +59,7 @@
     }
     function onEdit(p) {
       const op = p[1];
-      if (op === 0x43) { active = p[2]; memory = Uint8Array.from(store[active]); }
+      if (op === 0x43) { if (!ignoreSelect) { active = p[2]; memory = Uint8Array.from(store[active]); } }
       else if (op === 0x47) {
         const k = u32(p, 2), fxid = u32(p, 10);
         memory = Preset.writeBlock(memory, k, { fxid, params: Preset.defaultParams(catalog.get(fxid)) });
@@ -80,6 +82,7 @@
         const slot = u32(p, 2), nm = String.fromCharCode(...p.slice(6, 16)).trim();
         store[slot] = PRST.applyEdits(memory, { name: nm });
         memory = Uint8Array.from(store[slot]);
+        active = slot; // a GP-50 passa para o slot salvo (testado em 2026-11-09)
       }
       ack();
     }

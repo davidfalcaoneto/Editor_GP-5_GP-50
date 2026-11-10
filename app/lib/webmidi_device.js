@@ -66,14 +66,15 @@
     }
     return out;
   }
+  // [Editor GP-5/GP-50] O slot e a POSICAO do registro. Cada registro tambem traz um
+  // u32 com um numero, mas numa GP-50 ele veio trocado entre os registros 14 e 15
+  // (2026-11-09): a pedaleira mostra e salva pela posicao, e o campo confundia o editor.
   function splitNames(blob, hdr = 2, rec = 20) {
     const names = [];
-    const dv = new DataView(new Uint8Array(blob).buffer);
     for (let i = hdr; i + rec <= blob.length; i += rec) {
-      const idx = dv.getUint32(i, true);
       let nm = "";
       for (let j = i + 4; j < i + rec; j++) { if (blob[j] === 0) break; nm += String.fromCharCode(blob[j]); }
-      names.push({ slot: idx, name: nm.trim() });
+      names.push({ slot: (i - hdr) / rec, name: nm.trim() });
     }
     return names;
   }

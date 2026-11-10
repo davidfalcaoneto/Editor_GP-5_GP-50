@@ -119,6 +119,24 @@ await test("GP-50: troca de slot, CTL 1 e CTL 2 ao vivo, salvos e conferidos", a
   assert.deepEqual([...P.readCtl(pedal.memory())], [dst | mod, rvb]);
 });
 
+await test("se a pedaleira nao troca de preset, abrir o slot avisa em vez de fingir", async () => {
+  const { D, pedal, cat } = await connected({ gp50: true, ignoreSelect: true });
+  await assert.rejects(D.liveStart(null, 15, cat), /slot 15/);
+  assert.equal(pedal.active(), 11);
+});
+
+await test("salvar confere o slot ativo: se a pedaleira mudou de preset, nada e gravado", async () => {
+  const { D, pedal, R, cat, P } = await connected({ gp50: true });
+  const base = await D.liveStart(null, 14, cat);
+  await D.liveSync(P.writeBlock(base, 7, { values: { 0: 33 } }));
+  const before14 = pedal.store[14], before15 = pedal.store[15];
+  pedal.pressSlot(15); // trocou na pedaleira; o editor nao acompanhou
+  await sleep(50);
+  await assert.rejects(D.save(14, "AmbPoliVib"), /slot 15/);
+  assert.equal(pedal.store[14], before14, "slot 14 intacto");
+  assert.equal(pedal.store[15], before15, "slot 15 intacto");
+});
+
 await test("salvar (0x4A) grava a memoria de trabalho no slot com o nome", async () => {
   const { D, pedal, R, cat, P } = await connected();
   const base = await D.liveStart(null, 31, cat);

@@ -84,6 +84,14 @@ await test("decodifica BLE-MIDI: F7 com e sem timestamp, pacote dividido, Progra
   assert.deepEqual(msgs, ["f0000e00010000000201020400f7", "f0010203040506 07f7".replace(" ", ""), "c005"]);
 });
 
+await test("nomes: o slot e a posicao do registro, nao o campo de numero", () => {
+  const C = load().WebMidiDevice._codec;
+  // como a GP-50 devolveu em 2026-11-09: na posicao 14 o campo diz 15 e vice-versa
+  const rec = (field, name) => [field, 0, 0, 0, ...[...name.padEnd(16, "\0")].map((c) => c.charCodeAt(0))];
+  const blob = [0x12, 0x40, ...rec(13, "Dly410 Chr"), ...rec(15, "AmbPoliVib"), ...rec(14, "GP-50")];
+  assert.deepEqual([...C.splitNames(blob).map((n) => `${n.slot}:${n.name}`)], ["0:Dly410 Chr", "1:AmbPoliVib", "2:GP-50"]);
+});
+
 await test("mensagem longa vira varios pacotes e volta igual", () => {
   const C = load().WebMidiDevice._codec;
   const msg = [0xf0, ...Array.from({ length: 250 }, (_, i) => i % 16), 0xf7];
