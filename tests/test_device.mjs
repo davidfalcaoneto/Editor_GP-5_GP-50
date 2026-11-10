@@ -29,15 +29,28 @@ function gp5Slots(ctx) {
   }
   return slots;
 }
+// 100 slots da GP-50, do mesmo jeito
+function gp50Slots(ctx) {
+  const slots = Array.from({ length: 100 }, () => ctx.PRST.blankPrst("gp50"));
+  for (const f of readdirSync(join(guitarra, "gp50/Presets")).filter((f) => f.endsWith(".prst"))) {
+    const m = /^(\d+)-/.exec(f);
+    if (m) slots[Number(m[1])] = new Uint8Array(readFileSync(join(guitarra, "gp50/Presets", f)));
+  }
+  return slots;
+}
 const gp50File = (name) => new Uint8Array(readFileSync(join(guitarra, "gp50/Presets", readdirSync(join(guitarra, "gp50/Presets")).find((f) => f.startsWith(name)))));
 
-async function connected(opts = {}) {
+async function connected({ gp50 = false, ...opts } = {}) {
   const ctx = load();
-  const pedal = ctx.FakePedal.create({ PRST: ctx.PRST, Preset: ctx.Preset, catalog: ctx.catalogs.gp5, slots: gp5Slots(ctx), activeSlot: 11, ...opts });
+  const cat = gp50 ? ctx.catalogs.gp50 : ctx.catalogs.gp5;
+  const pedal = ctx.FakePedal.create({
+    PRST: ctx.PRST, Preset: ctx.Preset, catalog: cat, slots: gp50 ? gp50Slots(ctx) : gp5Slots(ctx),
+    name: gp50 ? "GP-50" : "GP-5", activeSlot: 11, ...opts,
+  });
   ctx.navigator.bluetooth = pedal.bluetooth;
   const info = await ctx.Device.connect("ble");
   await ctx.Device.readNames();
-  return { ctx, pedal, info, D: ctx.Device, P: ctx.Preset, R: ctx.PRST, cat: ctx.catalogs.gp5 };
+  return { ctx, pedal, info, D: ctx.Device, P: ctx.Preset, R: ctx.PRST, cat };
 }
 const noDiff = (d, msg = "") => assert.equal(d.length, 0, `${msg} ${d.join("; ")}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,6 +94,29 @@ await test("CTL ao vivo e salvo no slot", async () => {
   await D.save(22, "CTL test");
   const r = await D.verify(22, R.applyEdits(t, { name: "CTL test" }), cat);
   assert.equal(r.verified, true, r.diff.join("; "));
+});
+
+await test("GP-50: troca de slot, CTL 1 e CTL 2 ao vivo, salvos e conferidos", async () => {
+  const { D, pedal, R, cat, P, info } = await connected({ gp50: true });
+  assert.equal(info.key, "gp50");
+  const base = await D.liveStart(null, 12, cat);
+  assert.equal(pedal.active(), 12, "a GP-50 troca de preset pela SysEx 0x43");
+  const dst = 1 << 2, mod = 1 << 6, dly = 1 << 7, rvb = 1 << 8;
+  const t = P.writeCtl(P.writeCtl(base, 0, dst | mod), 1, dly | rvb);
+  await D.liveSync(t);
+  assert.deepEqual([...P.readCtl(pedal.memory())], [dst | mod, dly | rvb]);
+  noDiff(P.diff(t, pedal.memory(), cat, { name: false }));
+  // os bits acima do 9 (o 12 de fabrica tem 0x10000 no CTL 1) ficam como estavam
+  const high = (b) => [...R.readFootswitches(b)].map((m) => (m & ~0x3ff) >>> 0);
+  assert.ok(high(base)[0] !== 0, "o slot 12 de fabrica tem bits altos no CTL 1");
+  assert.deepEqual(high(pedal.memory()), high(base));
+  await D.save(12, "CTL GP50");
+  const r = await D.verify(12, R.applyEdits(t, { name: "CTL GP50" }), cat);
+  assert.equal(r.verified, true, r.diff.join("; "));
+  // tirar um bloco de um CTL so mexe naquele CTL
+  const t2 = P.writeCtl(r.readBack, 1, rvb);
+  await D.liveSync(t2);
+  assert.deepEqual([...P.readCtl(pedal.memory())], [dst | mod, rvb]);
 });
 
 await test("salvar (0x4A) grava a memoria de trabalho no slot com o nome", async () => {

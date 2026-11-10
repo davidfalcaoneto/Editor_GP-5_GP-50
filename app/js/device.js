@@ -146,11 +146,16 @@
       const [vol, bpm] = PRST.readVolBpm(target), [vol0, bpm0] = PRST.readVolBpm(shown);
       if (vol !== vol0) { await Dev.live.volume(vol); sent++; }
       if (bpm !== bpm0) { await Dev.live.bpm(bpm); sent++; }
+      // CTL: a GP-50 recebe as duas mascaras inteiras, com os bits acima do 9 como
+      // estao no preset (a propria pedaleira os mantem; o significado e desconhecido);
+      // a GP-5, bloco por bloco.
       const ctl = Preset.readCtl(target), ctl0 = Preset.readCtl(shown);
-      for (let fs = 0; fs < Preset.CTL_COUNT[Dev.device().key]; fs++) {
+      if (Dev.device().key === "gp50") {
+        if (ctl[0] !== ctl0[0] || ctl[1] !== ctl0[1]) { await Dev.live.ctlMasks(PRST.readFootswitches(target)); sent++; }
+      } else {
         for (let k = 0; k < Preset.BLOCKS.length; k++) {
-          const on = (ctl[fs] >> k) & 1;
-          if (on !== ((ctl0[fs] >> k) & 1)) { await Dev.live.ctl(fs, k, !!on); sent++; }
+          const on = (ctl[0] >> k) & 1;
+          if (on !== ((ctl0[0] >> k) & 1)) { await Dev.live.ctl(0, k, !!on); sent++; }
         }
       }
       shown = Uint8Array.from(target);

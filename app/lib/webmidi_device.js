@@ -16,7 +16,7 @@
  *
  *   const dev = await WebMidiDevice.connect();      // {key,name}; throws if none
  *   const names = await WebMidiDevice.readNames();  // [{slot,name}, ...]
- *   await WebMidiDevice.selectSlot(7);              // Program Change (non-destructive)
+ *   await WebMidiDevice.selectSlot(7);              // SysEx 0x43 (non-destructive)
  *   const prst = await WebMidiDevice.readSlotPrst(7); // select + 0x41 + rebuild -> Uint8Array
  *
  * [Editor GP-5/GP-50] Tambem conecta pelo Bluetooth (connectBle, BLE-MIDI com o
@@ -287,7 +287,7 @@
 
   // [Editor GP-5/GP-50] A GP-5 ignora Program Change pelo USB (testado 2026-10-29):
   // nela o preset e trocado pela SysEx de edicao [0x11, 0x43, slot] (a mesma do
-  // gp5-wc), que o aparelho responde. A GP-50 segue com Program Change.
+  // gp5-wc), que o aparelho responde. A GP-50 aceita a mesma SysEx (ver selectSlot).
   function buildEdit(payload) {
     const buf = [0, 0x01, 0x00, payload.length, ...payload];
     buf[0] = crc8(buf);
@@ -321,7 +321,10 @@
   //   [0x11,0x42, 01 20 00 00, vol u32]    volume do preset
   //   [0x11,0x42, 02 20 04 00, bpm u32]    BPM do preset (usado na GP-50; na GP-5 ainda nao confirmado)
   //   [0x11,0x4a, slot u32, nome 10 bytes] SALVA a memoria de trabalho no slot, com o nome
-  //   [0x11,0x4d, ctl, bloco, 0|1]         bloco entra/sai do CTL (GP-5: ctl 0; GP-50: 0 e 1)
+  //   [0x11,0x4d, ctl, bloco, 0|1]         GP-5: bloco entra/sai do CTL
+  //   [0x11,0x4d, ctl1 u32, ctl2 u32]      GP-50: as duas mascaras de CTL inteiras. O formato
+  //                                        da GP-5 na GP-50 grava os bytes do comando nas
+  //                                        mascaras (lixo). Testado na GP-50 por USB em 2026-11-09.
   const SAVE_NAME_LEN = 10;
   const live = {
     model: (blk, fxid) => sendEdit([0x11, 0x47, ...u32(blk), ...u32(blk), ...u32(fxid >>> 0)]),
@@ -331,6 +334,7 @@
     volume: (v) => sendEdit([0x11, 0x42, 0x01, 0x20, 0x00, 0x00, ...u32(Math.round(v))]),
     bpm: (v) => sendEdit([0x11, 0x42, 0x02, 0x20, 0x04, 0x00, ...u32(Math.round(v))]),
     ctl: (fs, blk, on) => sendEdit([0x11, 0x4d, fs & 0xff, blk & 0xff, on ? 1 : 0]),
+    ctlMasks: (masks) => sendEdit([0x11, 0x4d, ...u32(masks[0] >>> 0), ...u32(masks[1] >>> 0)]),
     save: (slot, name) => {
       const n = [...String(name).padEnd(SAVE_NAME_LEN, " ").slice(0, SAVE_NAME_LEN)].map((c) => c.charCodeAt(0) & 0x7f);
       return sendEdit([0x11, 0x4a, ...u32(slot), ...n]);
@@ -340,9 +344,11 @@
   function selectSlot(slot) {
     assertReady();
     if (!(slot >= 0 && slot <= 99)) throw new Error(`slot ${slot} out of range 0..99`);
+    // SysEx [0x11, 0x43, slot] nas duas: a GP-5 ignora Program Change pelo USB, e na
+    // GP-50 a SysEx funciona por USB (testado em 2026-11-09) e e o que o editor
+    // rvalladares usa pelo Bluetooth.
     return serialize(async () => {
-      if (profile.key === "gp5") await exchange(buildSelect(slot));
-      else send([0xc0, slot & 0x7f]); // Program Change — non-destructive
+      await exchange(buildSelect(slot));
       await new Promise((r) => setTimeout(r, POST_PC_MS));
     });
   }

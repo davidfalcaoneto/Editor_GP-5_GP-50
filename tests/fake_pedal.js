@@ -6,7 +6,8 @@
  * (0x40 nomes, 0x41 preset ativo, 0x43 slot ativo, 0x20/0x24 IRs e SnapTones) e
  * aplica os comandos de edicao (0x43 troca, 0x47 modelo, 0x48 parametro, 0x49
  * liga/desliga, 0x44 ordem, 0x42 volume/BPM, 0x4D CTL, 0x4A salvar). Imita o que se sabe
- * do aparelho; nao e o aparelho.
+ * do aparelho; nao e o aparelho. Com name "GP-50", o 0x4D segue o formato da GP-50.
+ * Program Change nao troca o preset (so a SysEx 0x43).
  *
  *   const pedal = FakePedal.create({ PRST, Preset, catalog, slots: [Uint8Array x100], name: "GP-5" });
  *   navigator.bluetooth = pedal.bluetooth;
@@ -19,6 +20,7 @@
     const listeners = [];
     const store = slots.map((b) => Uint8Array.from(b));
     let memory = Uint8Array.from(store[activeSlot]), active = activeSlot;
+    const gp50 = name.includes("GP-50");
     const sent = []; // comandos recebidos, decodificados: {payload}
 
     const toWire = (buf) => buf.flatMap((b) => [b >> 4, b & 0xf]);
@@ -64,7 +66,14 @@
       else if (op === 0x44) memory = PRST.applyEdits(memory, { order: Array.from(p.slice(2, 12)) });
       else if (op === 0x42 && p[2] === 0x01) memory = PRST.applyEdits(memory, { settings: { patch_vol: u32(p, 6) } });
       else if (op === 0x42 && p[2] === 0x02) memory = PRST.applyEdits(memory, { settings: { bpm: u32(p, 6) } });
-      else if (op === 0x4d) {
+      else if (op === 0x4d && gp50) {
+        // GP-50: os 8 bytes depois de 11 4D viram as duas mascaras (CTL 1 e CTL 2),
+        // como estao; mandar no formato da GP-5 grava lixo (testado na pedaleira em 2026-11-09).
+        const b = Uint8Array.from(memory), off = PRST.fsOffset(b);
+        for (let i = 0; i < 8; i++) b[off + i] = p[2 + i] ?? 0;
+        PRST.refixCrc(b);
+        memory = b;
+      } else if (op === 0x4d) {
         const fs = p[2], k = p[3], m = Preset.readCtl(memory)[fs];
         memory = Preset.writeCtl(memory, fs, p[4] ? m | (1 << k) : m & ~(1 << k));
       } else if (op === 0x4a) {
