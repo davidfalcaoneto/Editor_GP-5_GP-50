@@ -56,7 +56,7 @@
   }
 
   // ---------- gravar ----------
-  // GP-5: carrega o preset na memoria de trabalho (ao vivo) e salva com o comando
+  // GP-5 (e slot 0 da GP-50): carrega o preset na memoria de trabalho (ao vivo) e salva com o comando
   // nativo 0x4A, o mesmo do editor rvalladares.com/gp5/gpeditor, que grava na GP-5
   // por Bluetooth e USB. GP-50: fluxo de importacao do Valeton Suite (0x1D),
   // confirmado em capturas. Nos dois casos rele o slot e confere o que se ouve.
@@ -66,7 +66,9 @@
     let data = bytes;
     if (PRST.detect(bytes).key !== dev.key) data = PRST.convert(bytes, dev.key); // lanca erro se houver modelo incompativel
     let res;
-    if (dev.key === "gp5") {
+    // A GP-50 confirma a importacao 0x1D no slot 0 mas nao grava nada (testado em
+    // 2026-11-09); ali usa o mesmo caminho da GP-5.
+    if (dev.key === "gp5" || slot === 0) {
       data = PRST.applyEdits(data, { name: saveName(PRST.readName(data)) });
       await liveStart(data, slot, deviceCatalog);
       await save(slot, PRST.readName(data));

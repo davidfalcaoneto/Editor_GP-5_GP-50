@@ -10,6 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PRST = require("../app/lib/prst.js");
 const Preset = require("../app/js/preset.js");
 const Bulk = require("../app/js/bulk.js");
+const Equivalents = require("../app/js/equivalents.js");
 
 const catalogs = {
   gp5: Preset.makeCatalog(JSON.parse(readFileSync(join(here, "../app/data/fxid_ring_gp5.json"), "utf8"))),
@@ -128,6 +129,49 @@ test("CTL: le os blocos, grava preservando os outros bits e respeita 1 CTL na GP
   assert.ok(plan2.slice(2).every((r) => r.change && Preset.readCtl(r.bytes)[1] & (1 << 8)));
   const rem = Bulk.planCtl(gp5.slice(0, 3), { fs: 0, mode: "remover", mask: 1 << 1 });
   for (const r of rem.filter((r) => r.change)) assert.equal(Preset.readCtl(r.bytes)[0] & (1 << 1), 0);
+});
+
+test("GP-50 -> GP-5: todo preset de fabrica converte e so muda o que a GP-5 nao tem", () => {
+  let trocados = 0;
+  for (const p of gp50) {
+    const { bytes, notes } = Equivalents.toDevice(p.bytes, "gp5", catalogs);
+    assert.equal(PRST.detect(bytes).key, "gp5", p.id);
+    assert.ok(crcOk(bytes), p.id);
+    const before = Preset.decode(p.bytes, catalogs.gp50), after = Preset.decode(bytes, catalogs.gp5);
+    for (const b of after.blocks) assert.ok(b.entry, `${p.id} ${b.name}: modelo fora do catalogo da GP-5`);
+    let changed = 0;
+    before.blocks.forEach((b, k) => {
+      if (catalogs.gp5.has(b.fxid)) assert.deepEqual(Preset.readBlock(bytes, k), Preset.readBlock(p.bytes, k), `${p.id} ${b.name} mudou`);
+      else changed++;
+    });
+    assert.equal(notes.length, changed, p.id);
+    assert.equal(after.name, before.name); assert.deepEqual(after.order, before.order); assert.deepEqual(after.ctl[0], before.ctl[0]);
+    trocados += changed;
+  }
+  assert.ok(trocados >= 5, "os presets acusticos (31-35) tem gabinete exclusivo da GP-50");
+});
+
+test("GP-50 -> GP-5: C-Wah vira Toucher com o mesmo Range e Q; AC Sim e CAB AC ficam desligados", () => {
+  const base = gp50.find((p) => p.id.includes("12-")).bytes;
+  let b = Preset.writeBlock(base, 1, { fxid: 0x05000008, active: true, values: { 0: 37, 1: 64 } }); // PRE C-Wah
+  b = Preset.writeBlock(b, 4, { fxid: 0x0a00003c, active: true }); // CAB AC ligado
+  const { bytes, notes } = Equivalents.toDevice(b, "gp5", catalogs);
+  const pre = Preset.decode(bytes, catalogs.gp5).blocks[1], cab = Preset.decode(bytes, catalogs.gp5).blocks[4];
+  assert.equal(pre.fxid, 0x0100000f); assert.equal(pre.active, true);
+  const v = Object.fromEntries(pre.params.map((x) => [x.name, x.value]));
+  assert.equal(v.Range, 37); assert.equal(v.Q, 64); assert.equal(v.Mix, 100);
+  assert.equal(cab.active, false); assert.ok(catalogs.gp5.has(cab.fxid));
+  assert.equal(notes.length, 2); assert.match(notes[0], /Toucher/); assert.match(notes[1], /CAB ficou desligado/);
+  const ac = Equivalents.toDevice(Preset.writeBlock(base, 1, { fxid: 0x01000001, active: true }), "gp5", catalogs);
+  assert.equal(Preset.decode(ac.bytes, catalogs.gp5).blocks[1].active, false);
+});
+
+test("GP-5 -> GP-50 nao troca nenhum modelo", () => {
+  for (const p of gp5) {
+    const { bytes, notes } = Equivalents.toDevice(p.bytes, "gp50", catalogs);
+    assert.equal(notes.length, 0, p.id);
+    for (let k = 0; k < 10; k++) assert.deepEqual(Preset.readBlock(bytes, k), Preset.readBlock(p.bytes, k));
+  }
 });
 
 console.log(`\n${passed} testes ok (${gp5.length} presets GP-5, ${gp50.length} GP-50)`);

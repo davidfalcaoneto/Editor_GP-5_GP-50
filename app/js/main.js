@@ -7,7 +7,7 @@
  * muda na tela vai para a memoria de trabalho dela na hora, e Salvar grava no slot.
  */
 (async function () {
-  const { PRST, Preset, Bulk, Device } = window;
+  const { PRST, Preset, Bulk, Device, Equivalents } = window;
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -170,16 +170,9 @@
   document.addEventListener("drop", (e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); addFiles([...e.dataTransfer.files]); });
 
   // ---------- salvar arquivos ----------
-  const incompatible = (bytes, target) =>
-    Preset.decode(bytes, catalogs[PRST.detect(bytes).key]).blocks.filter((b) => !catalogs[target].has(b.fxid)).map((b) => `${b.name} ${b.model}`);
-
-  function exportBytes(p, format) {
-    const target = format || p.device;
-    if (target === p.device) return p.bytes;
-    const bad = incompatible(p.bytes, target);
-    if (bad.length) throw new Error(`não existe na ${PRST.profileFor(target).name}: ${bad.join(", ")}`);
-    return PRST.convert(p.bytes, target);
-  }
+  // Converte para outra pedaleira trocando os modelos que ela nao tem (equivalents.js).
+  // Devolve {bytes, notes}: notes explica cada troca.
+  const toDevice = (p, target) => Equivalents.toDevice(p.bytes, target || p.device, catalogs);
   const safeName = (s) => s.replace(/[\\/:*?"<>|]/g, "_");
   function fileNameFor(p) {
     const name = PRST.readName(p.bytes);
@@ -202,28 +195,32 @@
   $("#btnSave").onclick = async () => {
     const sel = S.presets.filter((p) => S.selected.has(p.id));
     if (!sel.length) return toast("Selecione os presets que quer salvar.", true);
-    const format = $("#saveFormat").value, items = [], bad = [];
+    const format = $("#saveFormat").value, items = [], bad = [], swaps = [];
     for (const p of sel) {
-      try { items.push({ p, name: fileNameFor(p), bytes: exportBytes(p, format) }); }
-      catch (e) { bad.push(`${PRST.readName(p.bytes)}: ${e.message}`); }
+      try {
+        const r = toDevice(p, format);
+        items.push({ p, name: fileNameFor(p), bytes: r.bytes });
+        r.notes.forEach((n) => swaps.push(`${PRST.readName(p.bytes)} · ${n}`));
+      } catch (e) { bad.push(`${PRST.readName(p.bytes)}: ${e.message}`); }
     }
     try {
       await saveToFolder(items);
       if (!format) for (const it of items) if (it.p.source === "arquivo") { it.p.original = it.p.bytes; it.p.fileName = it.name; }
       renderAll();
-      toast(`${items.length} arquivo(s) salvo(s)` + (bad.length ? `\nNão salvos:\n${bad.join("\n")}` : ""), bad.length > 0);
+      toast(`${items.length} arquivo(s) salvo(s)` + (swaps.length ? `\nModelos trocados:\n${swaps.join("\n")}` : "")
+        + (bad.length ? `\nNão salvos:\n${bad.join("\n")}` : ""), bad.length > 0);
     } catch (e) { if (e.name !== "AbortError") fail(e); }
   };
   $("#btnExport").onclick = async () => {
     const p = cur(); if (!p) return;
     try {
-      const format = $("#exportFormat").value, bytes = exportBytes(p, format);
+      const format = $("#exportFormat").value, { bytes, notes } = toDevice(p, format);
       const name = format && format !== p.device ? fileNameFor(p).replace(/\.prst$/i, `-${format}.prst`) : fileNameFor(p);
       if (window.showSaveFilePicker) {
         const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "Preset Valeton", accept: { "application/octet-stream": [".prst"] } }] });
         const w = await h.createWritable(); await w.write(bytes); await w.close();
       } else download(name, bytes);
-      toast(`Exportado: ${name}`);
+      toast(`Exportado: ${name}` + (notes.length ? `\nModelos trocados:\n${notes.join("\n")}` : ""));
     } catch (e) { if (e.name !== "AbortError") fail(e); }
   };
 
@@ -484,10 +481,7 @@
   // Tudo fica so na memoria de trabalho ate Salvar.
   const live = { id: null, synced: null, starting: false };
   const isLiveCurrent = () => live.id === S.current && !live.starting && Device.isLive();
-  function liveBytes(p) {
-    const key = Device.device().key;
-    return p.device === key ? p.bytes : PRST.convert(p.bytes, key);
-  }
+  const liveBytes = (p) => toDevice(p, Device.device().key).bytes;
   function renderLive(p) {
     const conn = Device.isConnected(), on = conn && live.id === p.id && !live.starting;
     const badge = $("#liveStatus");
@@ -507,8 +501,9 @@
   }
   async function startLive(p) {
     const dev = Device.device();
-    const bad = p.device !== dev.key ? incompatible(p.bytes, dev.key) : [];
-    if (bad.length) return toast(`Não dá para tocar: usa modelo que não existe na ${dev.name} (${bad.join(", ")})`, true);
+    let notes;
+    try { notes = toDevice(p, dev.key).notes; } catch (e) { return toast(`Não dá para tocar na ${dev.name}: ${e.message}`, true); }
+    if (notes.length) toast(`Na ${dev.name}, modelos trocados:\n${notes.join("\n")}`);
     live.starting = true; live.id = p.id; renderLive(p);
     try {
       if (p.source === "pedaleira" && p.device === dev.key && !isDirty(p)) {
@@ -849,13 +844,15 @@
     if (noSlot.length) return toast(`Defina o slot (no Editor) de: ${noSlot.map((p) => PRST.readName(p.bytes)).join(", ")}`, true);
     const slots = sel.map((p) => p.slot);
     if (new Set(slots).size !== slots.length) return toast("Há dois presets selecionados para o mesmo slot.", true);
+    const conv = new Map(), swaps = [];
     for (const p of sel) {
-      const bad = p.device !== dev.key ? incompatible(p.bytes, dev.key) : [];
-      if (bad.length) return toast(`"${PRST.readName(p.bytes)}" usa modelo que não existe na ${dev.name}: ${bad.join(", ")}`, true);
+      try { conv.set(p.id, toDevice(p, dev.key)); } catch (e) { return toast(`"${PRST.readName(p.bytes)}": ${e.message}`, true); }
+      conv.get(p.id).notes.forEach((n) => swaps.push(`slot ${p.slot} · ${n}`));
     }
     const names = S.devNames || [];
     const lines = sel.map((p) => `slot ${p.slot}: "${(names.find((n) => n.slot === p.slot) || {}).name ?? "?"}" → "${PRST.readName(p.bytes)}"`);
-    if (!confirm(`Gravar ${sel.length} preset(s) na ${dev.name}? Isso SOBRESCREVE:\n\n${lines.join("\n")}\n\nO conteúdo atual de cada slot é guardado antes, como backup.${dev.key === "gp5" ? "\n\nNa GP-5 o nome fica com até 10 caracteres." : ""}`)) return;
+    if (!confirm(`Gravar ${sel.length} preset(s) na ${dev.name}? Isso SOBRESCREVE:\n\n${lines.join("\n")}\n\nO conteúdo atual de cada slot é guardado antes, como backup.${dev.key === "gp5" ? "\n\nNa GP-5 o nome fica com até 10 caracteres." : ""}`
+      + (swaps.length ? `\n\nModelos que não existem na ${dev.name} serão trocados:\n${swaps.join("\n")}` : ""))) return;
 
     stopLive();
     S.stop = false; S.busy = true; renderAll();
@@ -868,7 +865,7 @@
         const [backup] = await Device.readSlots([p.slot]);
         S.backups.push({ slot: p.slot, device: dev.key, bytes: backup.bytes, when: new Date() });
         renderBackups();
-        const r = await Device.writeSlot(p.slot, p.bytes, catalogs[dev.key]);
+        const r = await Device.writeSlot(p.slot, conv.get(p.id).bytes, catalogs[dev.key]);
         if (r.verified) {
           addPreset({ id: devId(dev.key, p.slot), slot: p.slot, bytes: r.readBack, source: "pedaleira" });
           if (p.source === "arquivo") p.original = p.bytes; else p.original = p.bytes = r.readBack;

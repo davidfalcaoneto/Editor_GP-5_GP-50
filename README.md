@@ -53,7 +53,7 @@ No Bluetooth, desconecte antes o app do celular. No Mac, o Chrome precisa de per
 | `conversor/` | conversor GP-50 → GP-5 em Python (linha de comando) |
 | `tests/` | `node tests/test_bulk.mjs` — testa com os presets de fábrica, que ficam fora do repositório em `../gp5/Presets` e `../gp50/Presets`; `node tests/test_ble.mjs` — pacotes Bluetooth; `node tests/test_device.mjs` — ao vivo, salvar e gravar contra a pedaleira simulada (`tests/fake_pedal.js`) |
 
-## Protocolo — o que já foi confirmado na GP-5 (USB, 29/10/2026)
+## Protocolo — o que já foi confirmado (GP-5 por USB em 29/10/2026; GP-50 por USB em 09/11/2026)
 
 - Leitura dos 100 nomes (SysEx seletor `0x40`) e do preset ativo (`0x41`): ok, byte a byte igual aos arquivos. Na lista de nomes, o slot é a **posição** do registro (20 bytes cada); o número que vem dentro do registro pode estar trocado (numa GP-50 vieram 14↔15) e não é usado.
 - **A GP-5 ignora Program Change pelo USB.** Trocar de preset funciona com a SysEx `[0x11, 0x43, slot]` ou com CC#0 = slot. O editor usa a SysEx nas duas pedaleiras (`app/lib/webmidi_device.js`); na GP-50 ela também funciona pelo USB (testado em 09/11/2026).
@@ -64,19 +64,40 @@ No Bluetooth, desconecte antes o app do celular. No Mac, o Chrome precisa de per
 - Comandos da memória de trabalho usados pelo editor rvalladares (que funciona na GP-5 por Bluetooth e USB): CTL `[0x11,0x4D, ctl, bloco, 0|1]` (GP-5), ordem `[0x11,0x44, 10 bytes]`, volume `[0x11,0x42, 01 20 00 00, vol u32]`, BPM `[0x11,0x42, 02 20 04 00, bpm u32]` e **salvar** `[0x11,0x4A, slot u32, nome 10 bytes]`. A pedaleira avisa o que se mexe nela com `[0x12, comando, …]` espelhando esses comandos (`0x48` parâmetro, `0x49` liga/desliga, `0x44` ordem, `0x47` modelo, `0x43` troca de preset; pelo USB a troca vem como `[0x12, 0x1B]`, sem o número).
 - **CTL na GP-50 é diferente:** `[0x11,0x4D, CTL1 u32, CTL2 u32]` — as duas máscaras inteiras (bits 0–9 = blocos na ordem NR, PRE, DST, AMP, CAB, EQ, MOD, DLY, RVB, N→S). Mandar o formato da GP-5 faz a GP-50 copiar os bytes do comando para as máscaras e estraga o CTL do preset (era a causa dos erros ao configurar CTL e ao salvar). Os bits acima do 9 variam de preset para preset e a pedaleira os mantém; o editor os preserva. Os 2 bytes depois das máscaras (`05`/`06`) são o estado de cada botão (invertem a cada pisada), não configuração. Tap tempo (segurar A) só muda o BPM, e o modo de passagem de presets (segurar B) não fica no preset. A GP-50 não avisa quando o CTL é mudado na própria pedaleira (testado em 09/11/2026).
 - O salvar `0x4A` grava a memória de trabalho no slot pedido (nome e efeitos) e a pedaleira passa para esse slot. Por isso o editor confere o slot ativo (`[0x12, 0x43]`) ao abrir um slot e antes de salvar: se a pedaleira estiver noutro, não grava.
-- Gravação: na **GP-5** o editor carrega o preset na memória de trabalho e usa o salvar nativo `0x4A` (a importação `0x1D` do Valeton Suite falhou na GP-5 no slot 31). Na **GP-50**, gravar em lote usa `0x1D` (confirmado em capturas); Salvar no Editor usa `0x4A` nas duas.
+- Gravação: na **GP-5** o editor carrega o preset na memória de trabalho e usa o salvar nativo `0x4A` (a importação `0x1D` do Valeton Suite falhou na GP-5 no slot 31). Na **GP-50**, gravar em lote usa `0x1D` (confirmado na pedaleira), **exceto no slot 0**: ali a GP-50 confirma a importação mas não grava nada, e o editor usa o `0x4A`. Salvar no Editor usa `0x4A` nas duas.
 - Nos presets de fábrica da GP-5 o Time do delay às vezes vale 1…10 (abaixo do mínimo de 20 ms): é a figura sincronizada com o BPM do preset (0 = 1/1 … 10 = 1/16). Ou seja, a GP-5 também guarda BPM por preset.
+
+## GP-5 × GP-50: diferenças de efeitos
+
+Todos os modelos da GP-5 existem na GP-50, com os mesmos bytes: um preset da GP-5 vai para a GP-50 sem trocar nada.
+
+A GP-50 tem quatro modelos que a GP-5 não tem. Ao converter para a GP-5 (salvar em arquivo, tocar ou gravar na pedaleira), o editor troca cada um pelo equivalente mais próximo e avisa o que trocou (`app/js/equivalents.js`):
+
+| Bloco | Na GP-50 | Na GP-5 vira | Observação |
+|---|---|---|---|
+| PRE | **C-Wah** (Dunlop Cry Baby, wah de pedal) | **Toucher** (wah que segue a palhetada), com o mesmo Range e Q e Mix 100 | a GP-5 não tem wah de pedal |
+| PRE | **AC Sim** (simulador de violão) | bloco desligado | sem equivalente; o som de violão vem do AMP **AC Pre1/AC Pre2**, que existe nas duas |
+| CAB | **AC** (gabinete de violão) | bloco desligado | nos presets acústicos de fábrica (31–35) ele já vem desligado, então o som não muda |
+| CAB | gabinete acústico `0x0a00003d` (sem nome nos catálogos) | bloco desligado | idem |
+
+O resto do preset (outros blocos, ordem, nome, volume, BPM, CTL 1) fica igual. O CTL 2 só existe na GP-50.
+
+Diferenças que **não** atrapalham a conversão:
+
+- **Sync dos delays e modulações:** a GP-50 mostra um parâmetro "Sync" (sincronizar com o BPM) em 21 efeitos (delays, modulações e o Crier). A GP-5 grava a mesma coisa do mesmo jeito (no delay, Time = figura rítmica, 0 = 1/1 … 10 = 1/16, e o parâmetro "Sync" = 1); só o catálogo dela não mostra o "Sync". Os presets de fábrica sincronizados são idênticos byte a byte nas duas.
+- **Detune** mostra a unidade "cents" só na GP-50.
+- **CTL**: a GP-5 tem um CTL, a GP-50 tem dois, e o comando para configurá-los é diferente (veja Protocolo).
 
 ## Pendências conhecidas
 
 - **Pedal de expressão (GP-50):** a configuração fica nos registros 3 a 10 do bloco de ajustes do preset, mas todos os presets de fábrica têm os mesmos valores (3=0 4=0 5=100 6=0 7=0 8=100 9=0 10=0), então não dá para saber o que cada um significa. Para decodificar: exportar do Valeton Suite (ou da GP-50) o mesmo preset duas ou três vezes, mudando só uma coisa do EXP de cada vez (destino, mínimo, máximo), e comparar.
 
-- **Falta confirmar no aparelho:** salvar `0x4A` e o caminho de gravação da GP-5 (vêm do editor rvalladares, que funciona, mas este editor ainda não rodou na pedaleira); o comando de BPM na GP-5; tudo na GP-50 pelo Bluetooth. Testado contra a pedaleira simulada (`tests/fake_pedal.js`), que imita o que se sabe do aparelho.
-- **Acompanhar a pedaleira pelo USB:** pelo USB a pedaleira avisa a troca de preset (`[0x12, 0x1B]`, segundo o editor rvalladares); se ela manda também knobs pelo USB, o log da aba Pedaleira mostra.
+- **Falta confirmar no aparelho:** o Bluetooth nas pedaleiras reais (até agora só contra a pedaleira simulada, `tests/fake_pedal.js`); na GP-5, o salvar `0x4A` feito por este editor e o comando de BPM. Na GP-50 por USB, salvar, gravar em lote e todos os comandos ao vivo já foram testados.
+- **Acompanhar a pedaleira pelo USB:** pelo USB a pedaleira avisa a troca de preset (`[0x12, 0x1B]`) e o salvar; a GP-50 não avisa mudanças de CTL feitas nela. Se ela manda também knobs pelo USB, o log da aba Pedaleira mostra.
 
 - **Enviar IR (.wav) e NAM para a pedaleira:** o protocolo de envio não é público. A conversão NAM → SnapTone é feita por código proprietário do Valeton Suite. Para avançar é preciso capturar o tráfego USB do Suite enviando um IR e um NAM.
 
-- Os presets acústicos da GP-50 (31 a 35) usam os gabinetes `0x0a00003c` ("AC", só existe na GP-50) e `0x0a00003d` (fora dos catálogos). O conversor de linha de comando não verifica isso.
+- O conversor de linha de comando (`conversor/`) não troca os modelos exclusivos da GP-50 (veja a seção abaixo); use o editor para converter.
 
 ## Licença
 

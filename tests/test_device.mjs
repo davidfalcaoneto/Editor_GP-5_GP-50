@@ -137,6 +137,15 @@ await test("salvar confere o slot ativo: se a pedaleira mudou de preset, nada e 
   assert.equal(pedal.store[15], before15, "slot 15 intacto");
 });
 
+await test("GP-50: gravar no slot 0 usa o salvar (a importacao 0x1D e ignorada nele)", async () => {
+  const { D, pedal, R, cat, P } = await connected({ gp50: true });
+  const file = gp50File("12-");
+  const r = await D.writeSlot(0, file, cat);
+  assert.equal(r.method, "salvar (0x4A)");
+  assert.equal(r.verified, true, r.diff.join("; "));
+  noDiff(P.diff(file, pedal.store[0], cat));
+});
+
 await test("salvar (0x4A) grava a memoria de trabalho no slot com o nome", async () => {
   const { D, pedal, R, cat, P } = await connected();
   const base = await D.liveStart(null, 31, cat);
