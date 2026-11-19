@@ -92,7 +92,7 @@ Diferenças que **não** atrapalham a conversão:
 
 - **Pedal de expressão (GP-50):** a configuração fica nos registros 3 a 10 do bloco de ajustes do preset, mas todos os presets de fábrica têm os mesmos valores (3=0 4=0 5=100 6=0 7=0 8=100 9=0 10=0), então não dá para saber o que cada um significa. Para decodificar: exportar do Valeton Suite (ou da GP-50) o mesmo preset duas ou três vezes, mudando só uma coisa do EXP de cada vez (destino, mínimo, máximo), e comparar.
 
-- **Falta confirmar no aparelho:** o Bluetooth nas pedaleiras reais (até agora só contra a pedaleira simulada, `tests/fake_pedal.js`); na GP-5, o salvar `0x4A` feito por este editor e o comando de BPM. Na GP-50 por USB, salvar, gravar em lote e todos os comandos ao vivo já foram testados.
+- **Falta confirmar no aparelho:** o Bluetooth na GP-5; na GP-5, o salvar `0x4A` feito por este editor e o comando de BPM. Na GP-50 por USB, salvar, gravar em lote e todos os comandos ao vivo já foram testados; pelo Bluetooth, gravar no slot 0 (trocar de slot, carregar ao vivo, salvar `0x4A` e conferir relendo) funcionou em 19/11/2026.
 - **Acompanhar a pedaleira pelo USB:** pelo USB a pedaleira avisa a troca de preset (`[0x12, 0x1B]`) e o salvar; a GP-50 não avisa mudanças de CTL feitas nela. Se ela manda também knobs pelo USB, o log da aba Pedaleira mostra.
 
 - **Enviar IR (.wav) e NAM para a pedaleira:** o protocolo de envio não é público. A conversão NAM → SnapTone é feita por código proprietário do Valeton Suite. Para avançar é preciso capturar o tráfego USB do Suite enviando um IR e um NAM.
